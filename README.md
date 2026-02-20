@@ -5,6 +5,7 @@ Digitale Werbetafeln fuer FiveM/ESX mit URL-Rotation, Admin-UI und MySQL-Speiche
 ## Uebersicht
 
 - Ersetzt Vanilla-Billboard-Texturen durch ein DUI-Weboverlay
+- Erkennt zusaetzlich billboard-aehnliche Custom-Modelle automatisch (optional)
 - Rotiert Werbung ueber mehrere URLs im einstellbaren Intervall
 - Admin-UI per Ingame-Command (`/billboardadmin`)
 - Live-Vorschau im UI (kleines Preview-Bild)
@@ -96,6 +97,11 @@ Wichtige Optionen:
 - `Config.CoverageScanIntervalMs`
 - `Config.CoverageDrawDistance`
 - `Config.CoverageMaxDrawEntries`
+- `Config.AutoDiscoverBillboardTargets`
+- `Config.AutoDiscoverRadius`
+- `Config.AutoDiscoverIntervalMs`
+- `Config.AutoDiscoverKeywords`
+- `Config.CustomTextureTargets`
 
 ### Billboard-Texturen (Vanilla)
 
@@ -103,6 +109,19 @@ Wichtige Optionen:
 - `Config.TextureTargets` wird daraus automatisch generiert (inkl. `_lod` Varianten).
 - `Config.VanillaBillboardModels` steuert, welche Modelle der Coverage-Scan prueft.
 - Falls auf deiner Map einzelne Schilder nicht ersetzt werden, musst du passende `txd/txn` Targets ergaenzen.
+
+### Billboard-Texturen (Custom Maps / Modded Billboards)
+
+- `Config.AutoDiscoverBillboardTargets = true` aktiviert eine automatische Erkennung von Modellnamen in der Naehe.
+- Gefundene Namen mit Keywords aus `Config.AutoDiscoverKeywords` erhalten automatisch Targets (`name` und `name_lod`).
+- Fuer feste manuelle Zuordnungen nutze `Config.CustomTextureTargets`:
+
+```lua
+Config.CustomTextureTargets = {
+    { txd = "my_billboard_asset", txn = "my_billboard_asset" },
+    { txd = "my_billboard_asset", txn = "my_billboard_face" }
+}
+```
 
 ## Datenbank
 

@@ -41,6 +41,17 @@ Config.CoverageMaxRadius = 1500.0
 Config.CoverageScanIntervalMs = 5000
 Config.CoverageDrawDistance = 80.0
 Config.CoverageMaxDrawEntries = 60
+-- Auto-discovers nearby billboard-like model names (e.g. custom map assets)
+-- and creates txd/txn replacements with name + name_lod combos.
+Config.AutoDiscoverBillboardTargets = true
+Config.AutoDiscoverRadius = 800.0
+Config.AutoDiscoverIntervalMs = 10000
+Config.AutoDiscoverKeywords = {
+    "billboard",
+    "billborads",
+    "billbrd",
+    "bboard"
+}
 
 -- All known vanilla billboard textures.
 -- LOD variants are auto-added so replacements stay visible at distance.
@@ -90,6 +101,9 @@ Config.VanillaBillboardModels = {
 }
 
 Config.TextureTargets = {}
+-- Optional manual txd/txn pairs for custom maps:
+-- { txd = "my_txd_name", txn = "my_texture_name" }
+Config.CustomTextureTargets = {}
 
 local seenTextureTargets = {}
 
@@ -111,4 +125,10 @@ for _, textureName in ipairs(Config.VanillaBillboardTextures) do
     addTextureTarget(textureName, textureName .. "_lod")
     addTextureTarget(textureName .. "_lod", textureName)
     addTextureTarget(textureName .. "_lod", textureName .. "_lod")
+end
+
+for _, target in ipairs(Config.CustomTextureTargets) do
+    if type(target) == "table" then
+        addTextureTarget(target.txd, target.txn)
+    end
 end

@@ -1,6 +1,8 @@
 local RUNTIME_TXD = "billboard_runtime_txd"
 local RUNTIME_TXN = "billboard_runtime_txn"
-local textureTargets = type(Config.TextureTargets) == "table" and Config.TextureTargets or {}
+local configuredTextureTargets = type(Config.TextureTargets) == "table" and Config.TextureTargets or {}
+local textureTargets = {}
+local textureTargetKeys = {}
 local cacheBustEnabled = Config.CacheBust == true
 local duiWidth = math.max(64, math.floor(tonumber(Config.DuiWidth) or 1920))
 local duiHeight = math.max(64, math.floor(tonumber(Config.DuiHeight) or 1080))
@@ -17,6 +19,11 @@ local coverageMaxRadius = math.max(coverageMinRadius, tonumber(Config.CoverageMa
 local coverageScanIntervalMs = math.max(1000, math.floor(tonumber(Config.CoverageScanIntervalMs) or 5000))
 local coverageDrawDistance = math.max(1.0, tonumber(Config.CoverageDrawDistance) or 80.0)
 local coverageMaxDrawEntries = math.max(1, math.floor(tonumber(Config.CoverageMaxDrawEntries) or 60))
+local autoDiscoverEnabled = Config.AutoDiscoverBillboardTargets == true
+local autoDiscoverRadius = math.max(20.0, tonumber(Config.AutoDiscoverRadius) or 800.0)
+local autoDiscoverIntervalMs = math.max(1000, math.floor(tonumber(Config.AutoDiscoverIntervalMs) or 10000))
+local autoDiscoverKeywords = {}
+local canLookupArchetypeName = type(GetEntityArchetypeName) == "function"
 
 local duiObject
 local runtimeTxd
@@ -38,6 +45,7 @@ local coverageLastSummary = "Kein Scan ausgefuehrt."
 local coverageEntities = {}
 local coverageHashToModel = {}
 local coverageMappedModels = {}
+local autoDiscoveredModels = {}
 
 local function notify(message)
     if GetResourceState("chat") == "started" then
@@ -68,10 +76,99 @@ local function normalizeName(name)
     return tostring(name or ""):lower():gsub("_lod$", "")
 end
 
-for _, target in ipairs(textureTargets) do
+local function sanitizeTextureName(name)
+    local sanitized = tostring(name or ""):match("^%s*(.-)%s*$")
+    if not sanitized or #sanitized == 0 then
+        return nil
+    end
+
+    return sanitized
+end
+
+local function registerTextureTarget(txd, txn, sourceTag)
+    local cleanTxd = sanitizeTextureName(txd)
+    local cleanTxn = sanitizeTextureName(txn)
+    if not cleanTxd or not cleanTxn then
+        return false
+    end
+
+    local key = ("%s|%s"):format(cleanTxd:lower(), cleanTxn:lower())
+    if textureTargetKeys[key] then
+        return false
+    end
+
+    textureTargetKeys[key] = true
+    textureTargets[#textureTargets + 1] = {
+        txd = cleanTxd,
+        txn = cleanTxn
+    }
+    coverageMappedModels[normalizeName(cleanTxd)] = true
+    coverageMappedModels[normalizeName(cleanTxn)] = true
+
+    if replacementsApplied then
+        AddReplaceTexture(cleanTxd, cleanTxn, RUNTIME_TXD, RUNTIME_TXN)
+    end
+
+    debugLog(
+        "Texture-Target registriert: %s/%s (%s)",
+        cleanTxd,
+        cleanTxn,
+        tostring(sourceTag or "unspecified")
+    )
+    return true
+end
+
+local function registerTargetsForModel(modelName, sourceTag)
+    local cleanModel = sanitizeTextureName(modelName)
+    if not cleanModel then
+        return 0
+    end
+
+    local lodName = cleanModel .. "_lod"
+    local added = 0
+
+    if registerTextureTarget(cleanModel, cleanModel, sourceTag) then
+        added = added + 1
+    end
+    if registerTextureTarget(cleanModel, lodName, sourceTag) then
+        added = added + 1
+    end
+    if registerTextureTarget(lodName, cleanModel, sourceTag) then
+        added = added + 1
+    end
+    if registerTextureTarget(lodName, lodName, sourceTag) then
+        added = added + 1
+    end
+
+    return added
+end
+
+if type(Config.AutoDiscoverKeywords) == "table" then
+    for _, rawKeyword in ipairs(Config.AutoDiscoverKeywords) do
+        local keyword = sanitizeTextureName(rawKeyword)
+        if keyword then
+            autoDiscoverKeywords[#autoDiscoverKeywords + 1] = keyword:lower()
+        end
+    end
+end
+
+if #autoDiscoverKeywords == 0 then
+    autoDiscoverKeywords = {
+        "billboard",
+        "billborads",
+        "billbrd",
+        "bboard"
+    }
+end
+
+if autoDiscoverEnabled and not canLookupArchetypeName then
+    autoDiscoverEnabled = false
+    print("[billboardscript][client] Auto-Discovery deaktiviert: GetEntityArchetypeName nicht verfuegbar.")
+end
+
+for _, target in ipairs(configuredTextureTargets) do
     if type(target) == "table" then
-        coverageMappedModels[normalizeName(target.txd)] = true
-        coverageMappedModels[normalizeName(target.txn)] = true
+        registerTextureTarget(target.txd, target.txn, "config")
     end
 end
 
@@ -173,6 +270,58 @@ local function sanitizeCoverageRadius(rawRadius)
         value = coverageMaxRadius
     end
     return value
+end
+
+local function isAutoDiscoverMatch(name)
+    for _, keyword in ipairs(autoDiscoverKeywords) do
+        if name:find(keyword, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function discoverTextureTargets()
+    if not autoDiscoverEnabled then
+        return
+    end
+
+    if not activeSettings or not activeSettings.enabled then
+        return
+    end
+
+    local ped = PlayerPedId()
+    if ped == 0 then
+        return
+    end
+
+    local playerCoords = GetEntityCoords(ped)
+    local objects = GetGamePool("CObject") or {}
+    local addedModels = 0
+    local addedTargets = 0
+
+    for _, object in ipairs(objects) do
+        local coords = GetEntityCoords(object)
+        local distance = #(coords - playerCoords)
+
+        if distance <= autoDiscoverRadius then
+            local archetypeName = tostring(GetEntityArchetypeName(object) or ""):lower()
+            if #archetypeName > 0 and not autoDiscoveredModels[archetypeName] and isAutoDiscoverMatch(archetypeName) then
+                autoDiscoveredModels[archetypeName] = true
+                addedModels = addedModels + 1
+                addedTargets = addedTargets + registerTargetsForModel(archetypeName, "auto_discovery")
+            end
+        end
+    end
+
+    if addedModels > 0 then
+        debugLog(
+            "Auto-Discovery: %s neue Modellnamen erkannt, %s neue Texture-Targets aktiv.",
+            tostring(addedModels),
+            tostring(addedTargets)
+        )
+    end
 end
 
 local function requestSettings(reason)
@@ -497,6 +646,18 @@ CreateThread(function()
         if coverageEnabled then
             performCoverageScan(coverageRadius, true)
         end
+    end
+end)
+
+CreateThread(function()
+    if not autoDiscoverEnabled then
+        return
+    end
+
+    Wait(2500)
+    while true do
+        discoverTextureTargets()
+        Wait(autoDiscoverIntervalMs)
     end
 end)
 
