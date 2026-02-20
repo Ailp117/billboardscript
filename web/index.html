@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billboard Admin</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main id="panel" class="hidden">
+        <header class="panel-header">
+            <h1>Billboard Admin</h1>
+            <p>Digitale Werbung fuer alle Billboard-Texturen.</p>
+        </header>
+
+        <section class="panel-grid">
+            <label class="field checkbox-field" for="enabled">
+                <span>Aktiviert</span>
+                <input id="enabled" type="checkbox" checked>
+            </label>
+
+            <label class="field" for="rotationSeconds">
+                <span>Wechsel alle (Sekunden)</span>
+                <input id="rotationSeconds" type="number" min="5" max="600" step="1">
+                <small id="rotationHint"></small>
+            </label>
+
+            <label class="field" for="urls">
+                <span>URL Liste (eine URL pro Zeile)</span>
+                <textarea id="urls" rows="10" placeholder="https://example.com/ad-1.png&#10;https://example.com/ad-2.png"></textarea>
+                <small id="urlHint"></small>
+            </label>
+
+            <section class="preview-card">
+                <div class="preview-top">
+                    <span>Live Vorschau (aktuelle Zeile)</span>
+                    <small id="previewUrl">Keine URL ausgewaehlt</small>
+                </div>
+                <div class="preview-frame">
+                    <img id="previewImage" alt="Billboard Vorschau" class="hidden">
+                    <div id="previewPlaceholder" class="preview-placeholder">
+                        Keine gueltige Bild-URL in der aktuellen Zeile.
+                    </div>
+                </div>
+            </section>
+        </section>
+
+        <footer class="panel-actions">
+            <button id="saveBtn" class="btn primary">Speichern</button>
+            <button id="closeBtn" class="btn">Schliessen</button>
+        </footer>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
