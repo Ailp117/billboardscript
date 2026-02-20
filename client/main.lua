@@ -19,9 +19,14 @@ local coverageMaxRadius = math.max(coverageMinRadius, tonumber(Config.CoverageMa
 local coverageScanIntervalMs = math.max(1000, math.floor(tonumber(Config.CoverageScanIntervalMs) or 5000))
 local coverageDrawDistance = math.max(1.0, tonumber(Config.CoverageDrawDistance) or 80.0)
 local coverageMaxDrawEntries = math.max(1, math.floor(tonumber(Config.CoverageMaxDrawEntries) or 60))
+local requiredTextureNamePart = tostring(Config.TextureNameMustContain or ""):lower():match("^%s*(.-)%s*$")
 local autoDiscoverEnabled = Config.AutoDiscoverBillboardTargets == true
 local autoDiscoverRadius = math.max(20.0, tonumber(Config.AutoDiscoverRadius) or 800.0)
 local autoDiscoverIntervalMs = math.max(1000, math.floor(tonumber(Config.AutoDiscoverIntervalMs) or 10000))
+local autoDiscoverByDimensions = Config.AutoDiscoverByDimensions ~= false
+local autoDiscoverMinFaceArea = math.max(4.0, tonumber(Config.AutoDiscoverMinFaceArea) or 20.0)
+local autoDiscoverMinLongestSide = math.max(2.0, tonumber(Config.AutoDiscoverMinLongestSide) or 4.5)
+local autoDiscoverMaxDepth = math.max(0.2, tonumber(Config.AutoDiscoverMaxDepth) or 2.5)
 local autoDiscoverKeywords = {}
 local canLookupArchetypeName = type(GetEntityArchetypeName) == "function"
 
@@ -46,6 +51,7 @@ local coverageEntities = {}
 local coverageHashToModel = {}
 local coverageMappedModels = {}
 local autoDiscoveredModels = {}
+local autoDiscoverShapeCache = {}
 
 local function notify(message)
     if GetResourceState("chat") == "started" then
@@ -85,10 +91,25 @@ local function sanitizeTextureName(name)
     return sanitized
 end
 
+local function isTextureAllowed(txd, txn)
+    if not requiredTextureNamePart or requiredTextureNamePart == "" then
+        return true
+    end
+
+    local txdName = tostring(txd or ""):lower()
+    local txnName = tostring(txn or ""):lower()
+    return txdName:find(requiredTextureNamePart, 1, true) ~= nil
+        or txnName:find(requiredTextureNamePart, 1, true) ~= nil
+end
+
 local function registerTextureTarget(txd, txn, sourceTag)
     local cleanTxd = sanitizeTextureName(txd)
     local cleanTxn = sanitizeTextureName(txn)
     if not cleanTxd or not cleanTxn then
+        return false
+    end
+
+    if not isTextureAllowed(cleanTxd, cleanTxn) then
         return false
     end
 
@@ -143,6 +164,48 @@ local function registerTargetsForModel(modelName, sourceTag)
     return added
 end
 
+local function isBillboardLikeShape(modelHash)
+    local cached = autoDiscoverShapeCache[modelHash]
+    if cached ~= nil then
+        return cached
+    end
+
+    local minDim, maxDim = GetModelDimensions(modelHash)
+    if not minDim or not maxDim then
+        autoDiscoverShapeCache[modelHash] = false
+        return false
+    end
+
+    local sx = math.abs((maxDim.x or 0.0) - (minDim.x or 0.0))
+    local sy = math.abs((maxDim.y or 0.0) - (minDim.y or 0.0))
+    local sz = math.abs((maxDim.z or 0.0) - (minDim.z or 0.0))
+
+    local smallest = sx
+    if sy < smallest then
+        smallest = sy
+    end
+    if sz < smallest then
+        smallest = sz
+    end
+
+    local largest = sx
+    if sy > largest then
+        largest = sy
+    end
+    if sz > largest then
+        largest = sz
+    end
+
+    local middle = (sx + sy + sz) - smallest - largest
+    local faceArea = largest * middle
+    local looksLikeBillboard = smallest <= autoDiscoverMaxDepth
+        and largest >= autoDiscoverMinLongestSide
+        and faceArea >= autoDiscoverMinFaceArea
+
+    autoDiscoverShapeCache[modelHash] = looksLikeBillboard
+    return looksLikeBillboard
+end
+
 if type(Config.AutoDiscoverKeywords) == "table" then
     for _, rawKeyword in ipairs(Config.AutoDiscoverKeywords) do
         local keyword = sanitizeTextureName(rawKeyword)
@@ -154,16 +217,12 @@ end
 
 if #autoDiscoverKeywords == 0 then
     autoDiscoverKeywords = {
-        "billboard",
-        "billborads",
-        "billbrd",
-        "bboard"
+        "billboards"
     }
 end
 
 if autoDiscoverEnabled and not canLookupArchetypeName then
-    autoDiscoverEnabled = false
-    print("[billboardscript][client] Auto-Discovery deaktiviert: GetEntityArchetypeName nicht verfuegbar.")
+    print("[billboardscript][client] Hinweis: GetEntityArchetypeName nicht verfuegbar, nutze Dimensions-Fallback.")
 end
 
 for _, target in ipairs(configuredTextureTargets) do
@@ -282,12 +341,34 @@ local function isAutoDiscoverMatch(name)
     return false
 end
 
+local function getModelHashLabel(modelHash)
+    return ("hash_0x%08X"):format((modelHash or 0) & 0xFFFFFFFF)
+end
+
+local function tryRegisterDiscoveredModel(modelHash, modelName, sourceTag)
+    local normalizedModel = sanitizeTextureName(modelName)
+    if not normalizedModel then
+        return false, 0
+    end
+
+    local discoveryKey = ("%s|%s"):format(tostring(modelHash), normalizedModel:lower())
+    if autoDiscoveredModels[discoveryKey] then
+        return false, 0
+    end
+
+    autoDiscoveredModels[discoveryKey] = true
+    coverageHashToModel[modelHash] = normalizedModel
+
+    local addedTargets = registerTargetsForModel(normalizedModel, sourceTag)
+    return true, addedTargets
+end
+
 local function discoverTextureTargets()
     if not autoDiscoverEnabled then
         return
     end
 
-    if not activeSettings or not activeSettings.enabled then
+    if (not activeSettings or not activeSettings.enabled) and not coverageEnabled then
         return
     end
 
@@ -306,11 +387,45 @@ local function discoverTextureTargets()
         local distance = #(coords - playerCoords)
 
         if distance <= autoDiscoverRadius then
-            local archetypeName = tostring(GetEntityArchetypeName(object) or ""):lower()
-            if #archetypeName > 0 and not autoDiscoveredModels[archetypeName] and isAutoDiscoverMatch(archetypeName) then
-                autoDiscoveredModels[archetypeName] = true
-                addedModels = addedModels + 1
-                addedTargets = addedTargets + registerTargetsForModel(archetypeName, "auto_discovery")
+            local modelHash = GetEntityModel(object)
+            local matchedByShape = autoDiscoverByDimensions and isBillboardLikeShape(modelHash)
+            local archetypeName = ""
+
+            if canLookupArchetypeName then
+                archetypeName = tostring(GetEntityArchetypeName(object) or ""):lower()
+            end
+
+            local matchedByName = #archetypeName > 0 and isAutoDiscoverMatch(archetypeName)
+            if matchedByName or matchedByShape then
+                local modelName = archetypeName
+                if #modelName == 0 then
+                    modelName = coverageHashToModel[modelHash] or ""
+                end
+
+                if #modelName == 0 then
+                    local hashLabel = getModelHashLabel(modelHash)
+                    local hashOnlyKey = ("hash_only|%s"):format(hashLabel)
+                    if not autoDiscoveredModels[hashOnlyKey] then
+                        autoDiscoveredModels[hashOnlyKey] = true
+                        coverageHashToModel[modelHash] = hashLabel
+                        addedModels = addedModels + 1
+                        debugLog(
+                            "Auto-Discovery: Billboard-Objekt ueber Form erkannt, aber ohne Modellname (%s).",
+                            hashLabel
+                        )
+                    end
+                else
+                    local discovered, newTargets = tryRegisterDiscoveredModel(
+                        modelHash,
+                        modelName,
+                        matchedByName and "auto_discovery_name" or "auto_discovery_shape"
+                    )
+
+                    if discovered then
+                        addedModels = addedModels + 1
+                        addedTargets = addedTargets + newTargets
+                    end
+                end
             end
         end
     end

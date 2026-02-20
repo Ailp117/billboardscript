@@ -97,9 +97,14 @@ Wichtige Optionen:
 - `Config.CoverageScanIntervalMs`
 - `Config.CoverageDrawDistance`
 - `Config.CoverageMaxDrawEntries`
+- `Config.TextureNameMustContain`
 - `Config.AutoDiscoverBillboardTargets`
 - `Config.AutoDiscoverRadius`
 - `Config.AutoDiscoverIntervalMs`
+- `Config.AutoDiscoverByDimensions`
+- `Config.AutoDiscoverMinFaceArea`
+- `Config.AutoDiscoverMinLongestSide`
+- `Config.AutoDiscoverMaxDepth`
 - `Config.AutoDiscoverKeywords`
 - `Config.CustomTextureTargets`
 
@@ -112,8 +117,12 @@ Wichtige Optionen:
 
 ### Billboard-Texturen (Custom Maps / Modded Billboards)
 
+- `Config.TextureNameMustContain = "billboards"` sorgt dafuer, dass nur Texturen ersetzt werden, deren `txd` oder `txn` `billboards` enthaelt.
 - `Config.AutoDiscoverBillboardTargets = true` aktiviert eine automatische Erkennung von Modellnamen in der Naehe.
 - Gefundene Namen mit Keywords aus `Config.AutoDiscoverKeywords` erhalten automatisch Targets (`name` und `name_lod`).
+- Mit `Config.AutoDiscoverByDimensions` werden zusaetzlich grosse/flache Welt-Objekte erkannt (Fallback fuer platzierte Billboards).
+- Feintuning fuer den Fallback: `Config.AutoDiscoverMinFaceArea`, `Config.AutoDiscoverMinLongestSide`, `Config.AutoDiscoverMaxDepth`.
+- Falls kein Modellname aufloesbar ist, erscheint im Debug/Coverage ein `hash_0x...` Hinweis zur manuellen Nachpflege.
 - Fuer feste manuelle Zuordnungen nutze `Config.CustomTextureTargets`:
 
 ```lua

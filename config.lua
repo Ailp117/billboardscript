@@ -43,14 +43,18 @@ Config.CoverageDrawDistance = 80.0
 Config.CoverageMaxDrawEntries = 60
 -- Auto-discovers nearby billboard-like model names (e.g. custom map assets)
 -- and creates txd/txn replacements with name + name_lod combos.
+Config.TextureNameMustContain = "billboards"
 Config.AutoDiscoverBillboardTargets = true
 Config.AutoDiscoverRadius = 800.0
 Config.AutoDiscoverIntervalMs = 10000
+-- Optional shape-based fallback for map-placed world billboards.
+-- Helps when naming is inconsistent, but can be tuned if too broad.
+Config.AutoDiscoverByDimensions = false
+Config.AutoDiscoverMinFaceArea = 20.0
+Config.AutoDiscoverMinLongestSide = 4.5
+Config.AutoDiscoverMaxDepth = 2.5
 Config.AutoDiscoverKeywords = {
-    "billboard",
-    "billborads",
-    "billbrd",
-    "bboard"
+    "billboards"
 }
 
 -- All known vanilla billboard textures.
